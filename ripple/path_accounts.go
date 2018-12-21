@@ -115,46 +115,43 @@ func (b *backend) pathCreateAccount(ctx context.Context, req *logical.Request, d
 		return nil, err
 	}
 
-	ecdsaKey, err := crypto.NewECDSAKey(rawSeed)
-	if err != nil {
-		Log(err)
-		return nil, err
-	}
-
 	seedHash, err := crypto.NewFamilySeed(rawSeed)
 	if err != nil {
 		Log(err)
 		return nil, err
 	}
 
-	publicKeyBytes := ecdsaKey.PubKey().SerializeCompressed()
-	publicKeyHash, err := crypto.NewAccountPublicKey(publicKeyBytes)
+	ecdsaKey, err := crypto.NewECDSAKey(seedHash.Payload())
 	if err != nil {
 		Log(err)
 		return nil, err
 	}
 
-	privateKeyBytes := ecdsaKey.D.Bytes()
-	privateKeyHash, err := crypto.NewAccountPrivateKey(privateKeyBytes)
+	keySequenceZero := uint32(0)
+
+	publicKeyHash, err := crypto.AccountPublicKey(ecdsaKey, &keySequenceZero)
+	if err != nil {
+		Log(err)
+		return nil, err
+	}
+
+	privateKeyHash, err := crypto.AccountPrivateKey(ecdsaKey, &keySequenceZero)
 	if err != nil {
 		return nil, err
 	}
 
 	// Create a Ripple account id from the public key
-	accountIdBytes := sha256RipeMD160(publicKeyBytes)
-	accountIdHash, err := crypto.NewAccountId(accountIdBytes)
+	accountIdHash, err := crypto.AccountId(ecdsaKey, &keySequenceZero)
 	if err != nil {
 		Log(err)
 		return nil, err
 	}
 
-	accountIdStr := accountIdHash.String()
-
 	// Prod anchor
 	//err = fundAccount(address)
 
 	// Testnet
-	err = fundTestAccount(accountIdStr)
+	err = fundTestAccount(accountIdHash.String())
 	if err != nil {
 		Log(err)
 		return nil, err
@@ -162,7 +159,7 @@ func (b *backend) pathCreateAccount(ctx context.Context, req *logical.Request, d
 
 	// Create and store an Account object in Vault
 	accountJSON := &Account{
-		AccountId:    accountIdStr,
+		AccountId:    accountIdHash.String(),
 		PublicKey:    publicKeyHash.String(),
 		PrivateKey:   privateKeyHash.String(),
 		Secret:       seedHash.String(),

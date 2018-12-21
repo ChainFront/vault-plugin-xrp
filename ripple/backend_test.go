@@ -6,7 +6,6 @@ import (
 	"encoding/hex"
 	"github.com/rubblelabs/ripple/data"
 	"github.com/rubblelabs/ripple/websockets"
-	"log"
 	"testing"
 	"time"
 
@@ -77,7 +76,6 @@ func TestBackend_submitPayment(t *testing.T) {
 	if !ok {
 		t.Fatalf("expected signedTx data not present in createPayment")
 	}
-	log.Println(signedTx)
 
 	decodedString, err := hex.DecodeString(signedTx.(string))
 	if err != nil {
@@ -112,9 +110,15 @@ func TestBackend_submitPaymentAboveLimit(t *testing.T) {
 		t.Fatalf("expected signedTx data not present in createPayment")
 	}
 
-	byteReader := bytes.NewReader([]byte(signedTx.(string)))
+	decodedString, err := hex.DecodeString(signedTx.(string))
+	if err != nil {
+		t.Fatalf("unable to decode signedTx: %v", err)
+	}
+
+	byteReader := bytes.NewReader(decodedString)
 	transaction, err := data.ReadTransaction(byteReader)
 	if err != nil {
+		Log(err)
 		t.Fatalf("unable to read signed_transaction as a valid Ripple transaction: %v", err)
 	}
 
@@ -123,7 +127,7 @@ func TestBackend_submitPaymentAboveLimit(t *testing.T) {
 		t.Fatalf("failed to submit transaction to testnet: %v", errorString(err))
 	}
 
-	t.Logf("transaction posted in ledger: %v", response.EngineResultMessage)
+	t.Logf("Submitted transaction result : %s -- %s", response.EngineResult.String(), response.EngineResultMessage)
 }
 
 func TestBackend_submitPaymentUsingChannel(t *testing.T) {
