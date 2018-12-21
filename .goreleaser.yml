@@ -1,0 +1,41 @@
+# goreleaser config for pushing plugin to S3
+project_name: cf-vault-plugin-ripple
+
+builds:
+  -
+    env:
+      - CGO_ENABLED=0
+    goos:
+      - linux
+    goarch:
+      - amd64
+
+archive:
+  replacements:
+    amd64: x86_64
+
+sign:
+   artifacts: checksum
+
+checksum:
+  name_template: 'checksums.txt'
+
+snapshot:
+  name_template: "{{ .Tag }}-next"
+
+release:
+  # Disable github releases
+  disable: true
+
+changelog:
+  sort: asc
+  filters:
+    exclude:
+    - '^docs:'
+    - '^test:'
+
+s3:
+  -
+    bucket: chainfront-maven-repo
+    region: us-east-2
+    folder: "release/pcrypto/{{ .ProjectName }}/{{ .Version }}"
