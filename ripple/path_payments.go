@@ -5,10 +5,9 @@ import (
 	"fmt"
 	"github.com/hashicorp/vault/logical"
 	"github.com/hashicorp/vault/logical/framework"
-	"github.com/rubblelabs/ripple/crypto"
 	"github.com/rubblelabs/ripple/data"
-	"github.com/rubblelabs/ripple/websockets"
 	"math/big"
+	"strings"
 )
 
 // Register the callbacks for the paths exposed by these functions
@@ -85,6 +84,26 @@ func (b *backend) createPayment(ctx context.Context, req *logical.Request, d *fr
 	}
 	amount := validNumber(amountStr)
 
+	assetCode := d.Get("assetCode").(string)
+	if assetCode == "" {
+		return errMissingField("assetCode"), nil
+	}
+
+	// Read optional fields
+	assetIssuer := d.Get("assetIssuer").(string)
+	if assetIssuer == "" && !strings.EqualFold(assetCode, "native") {
+		return errMissingField("assetIssuer"), nil
+	}
+
+	// Read the optional additionalSigners field
+	//var additionalSigners []string
+	//if additionalSignersRaw, ok := d.GetOk("additionalSigners"); ok {
+	//	additionalSigners = additionalSignersRaw.([]string)
+	//}
+
+	// Read the optional memo field
+	//memo := d.Get("memo").(string)
+
 	// Retrieve the source account keypair from vault storage
 	sourceAccount, err := b.readVaultAccount(ctx, req, "accounts/"+source)
 	if err != nil {
@@ -112,7 +131,7 @@ func (b *backend) createPayment(ctx context.Context, req *logical.Request, d *fr
 	}
 
 	// Sign the transaction
-	signedPayment, err := signTransaction(sourceAccount, payment)
+	signedPayment, err := signPaymentTransaction(sourceAccount, payment)
 	if err != nil {
 		return nil, err
 	}
@@ -183,45 +202,8 @@ func createPaymentTransaction(sourceAddress string, destinationAddress string, a
 	fee, err := data.NewNativeValue(int64(10))
 	base := payment.GetBase()
 	base.Fee = *fee
+	//base.Memos = new data.Memo{}
 	base.Account = *src
-
-	return payment, nil
-}
-
-// Sign a payment transaction
-func signTransaction(account *Account, payment *data.Payment) (*data.Payment, error) {
-	// Get the signer key and sequence
-	seed, err := crypto.NewRippleHashCheck(account.Secret, crypto.RIPPLE_FAMILY_SEED)
-	if err != nil {
-		return nil, err
-	}
-	key, err := crypto.NewECDSAKey(seed.Payload())
-
-	rippleAccount, err := data.NewAccountFromAddress(account.AccountId)
-	if err != nil {
-		return nil, err
-	}
-
-	remote, err := websockets.NewRemote("wss://s.altnet.rippletest.net:51233")
-	if err != nil {
-		return nil, err
-	}
-
-	accountInfo, err := remote.AccountInfo(*rippleAccount)
-	if err != nil {
-		return nil, err
-	}
-	sequence := accountInfo.AccountData.Sequence
-
-	base := payment.GetBase()
-	base.Sequence = *sequence
-
-	// Sign the payment transaction
-	keySequence := uint32(0)
-	err = data.Sign(payment, key, &keySequence)
-	if err != nil {
-		return nil, err
-	}
 
 	return payment, nil
 }

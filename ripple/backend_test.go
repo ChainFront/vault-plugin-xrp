@@ -64,6 +64,40 @@ func TestBackend_createAccount(t *testing.T) {
 	createAccount(td, accountName, t)
 }
 
+func TestBackend_createAccountWithFlags(t *testing.T) {
+
+	td := setupTest(t)
+
+	accountName := "account1"
+	createAccount(td, accountName, t)
+
+	respData := createAccountSet(td, accountName, "8", "", "chainfront.io", t)
+
+	signedTx, ok := respData["signed_transaction"]
+	if !ok {
+		t.Fatalf("expected signedTx data not present in createAccountSet")
+	}
+
+	decodedString, err := hex.DecodeString(signedTx.(string))
+	if err != nil {
+		t.Fatalf("unable to decode signedTx: %v", err)
+	}
+
+	byteReader := bytes.NewReader(decodedString)
+	transaction, err := data.ReadTransaction(byteReader)
+	if err != nil {
+		Log(err)
+		t.Fatalf("unable to read signed_transaction as a valid Ripple transaction: %v", err)
+	}
+
+	response, err := td.Remote.Submit(transaction)
+	if err != nil {
+		t.Fatalf("failed to submit transaction to testnet: %v", errorString(err))
+	}
+
+	t.Logf("Submitted transaction result : %s -- %s", response.EngineResult.String(), response.EngineResultMessage)
+}
+
 func TestBackend_submitPayment(t *testing.T) {
 
 	td := setupTest(t)
@@ -215,6 +249,33 @@ func createAccount(td *testData, accountName string, t *testing.T) {
 		t.Fatal("response is nil")
 	}
 	t.Log(resp.Data)
+}
+
+func createAccountSet(td *testData, sourceAccountName string, setFlag string, clearFlag string, domain string, t *testing.T) map[string]interface{} {
+	d :=
+		map[string]interface{}{
+			"set_flag":   setFlag,
+			"clear_flag": clearFlag,
+			"domain":     domain,
+		}
+	resp, err := td.B.HandleRequest(context.Background(), &logical.Request{
+		Operation: logical.CreateOperation,
+		Path:      fmt.Sprintf("accounts/%s/accountset", sourceAccountName),
+		Data:      d,
+		Storage:   td.S,
+	})
+	if err != nil {
+		t.Fatalf("failed to set account flags: %v", err)
+	}
+	if resp.IsError() {
+		t.Fatal(resp.Error())
+	}
+	if resp == nil {
+		t.Fatal("response is nil")
+	}
+	t.Log(resp.Data)
+
+	return resp.Data
 }
 
 func createPayment(td *testData, sourceAccountName string, destinationAccountName string, amount string, t *testing.T) map[string]interface{} {

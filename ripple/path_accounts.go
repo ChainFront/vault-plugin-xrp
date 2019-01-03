@@ -9,11 +9,13 @@ import (
 	"github.com/hashicorp/vault/logical"
 	"github.com/hashicorp/vault/logical/framework"
 	"github.com/rubblelabs/ripple/crypto"
+	"github.com/rubblelabs/ripple/data"
 	"github.com/rubblelabs/ripple/websockets"
 	"github.com/shopspring/decimal"
 	"io"
 	"log"
 	"net/http"
+	"strconv"
 )
 
 type ecdsaKey struct {
@@ -70,6 +72,29 @@ func accountsPaths(b *backend) []*framework.Path {
 				logical.CreateOperation: b.pathCreateAccount,
 				logical.UpdateOperation: b.pathCreateAccount,
 				logical.ReadOperation:   b.pathReadAccount,
+			},
+		},
+		&framework.Path{
+			Pattern:      "accounts/" + framework.GenericNameRegex("name") + "/accountset",
+			HelpSynopsis: "Set options on an account.",
+			Fields: map[string]*framework.FieldSchema{
+				"name": &framework.FieldSchema{Type: framework.TypeString},
+				"set_flag": &framework.FieldSchema{
+					Type:        framework.TypeString,
+					Description: "Flag identifier to set on this account.",
+				},
+				"clear_flag": &framework.FieldSchema{
+					Type:        framework.TypeString,
+					Description: "Flag identifier to clear on this account.",
+				},
+				"domain": &framework.FieldSchema{
+					Type:        framework.TypeString,
+					Description: "Domain that owns this account.",
+				},
+			},
+			Callbacks: map[logical.Operation]framework.OperationFunc{
+				logical.CreateOperation: b.pathAccountSet,
+				logical.UpdateOperation: b.pathAccountSet,
 			},
 		},
 	}
@@ -221,6 +246,83 @@ func (b *backend) pathReadAccount(ctx context.Context, req *logical.Request, d *
 	}, nil
 }
 
+// Set account flags
+func (b *backend) pathAccountSet(ctx context.Context, req *logical.Request, d *framework.FieldData) (response *logical.Response, err error) {
+	name := d.Get("name").(string)
+	setFlagStr := d.Get("set_flag").(string)
+	clearFlagStr := d.Get("clear_flag").(string)
+	domainStr := d.Get("domain").(string)
+
+	// Retrieve the account keypair from vault storage
+	sourceAccount, err := b.readVaultAccount(ctx, req, "accounts/"+name)
+	if err != nil {
+		return nil, err
+	}
+	if sourceAccount == nil {
+		return nil, logical.CodedError(400, "source account not found")
+	}
+	sourceAddress := sourceAccount.AccountId
+	src, err := data.NewAccountFromAddress(sourceAddress)
+	if err != nil {
+		return nil, err
+	}
+
+	// Set up the basic transaction object
+	accountSetTx := &data.AccountSet{}
+
+	accountSetTx.TransactionType = data.ACCOUNT_SET
+	accountSetTx.Flags = new(data.TransactionFlag)
+
+	fee, err := data.NewNativeValue(int64(10))
+	base := accountSetTx.GetBase()
+	base.Fee = *fee
+	base.Account = *src
+
+	if setFlagStr != "" {
+		setFlag, err := strconv.ParseUint(setFlagStr, 10, 32)
+		if err != nil {
+			return nil, fmt.Errorf("set_flag is not a valid number")
+		}
+		setFlagInt := uint32(setFlag)
+		accountSetTx.SetFlag = &setFlagInt
+	}
+
+	if clearFlagStr != "" {
+		clearFlag, err := strconv.ParseUint(clearFlagStr, 10, 32)
+		if err != nil {
+			return nil, fmt.Errorf("clear_flag is not a valid number")
+		}
+		clearFlagInt := uint32(clearFlag)
+		accountSetTx.ClearFlag = &clearFlagInt
+	}
+
+	if domainStr != "" {
+		domain := data.VariableLength(domainStr)
+		accountSetTx.Domain = &domain
+	}
+
+	// Sign the transaction
+	signedTx, err := signAccountSetTransaction(sourceAccount, accountSetTx)
+	if err != nil {
+		return nil, err
+	}
+
+	_, txRaw, err := data.Raw(signedTx)
+	if err != nil {
+		return nil, err
+	}
+
+	return &logical.Response{
+		Data: map[string]interface{}{
+			"source_address":     signedTx.Account.String(),
+			"account_sequence":   signedTx.Sequence,
+			"fee":                signedTx.Fee.String(),
+			"transaction_hash":   signedTx.Hash.String(),
+			"signed_transaction": fmt.Sprintf("%X", txRaw),
+		},
+	}, nil
+}
+
 func (b *backend) readVaultAccount(ctx context.Context, req *logical.Request, path string) (*Account, error) {
 	log.Print("Reading account from path: " + path)
 	entry, err := req.Storage.Get(ctx, path)
@@ -260,7 +362,7 @@ func fundTestAccount(address string) (err error) {
 		AccountId: faucetAddress,
 		Secret:    faucetSecret}
 
-	signedTx, err := signTransaction(faucetAccount, payment)
+	signedTx, err := signPaymentTransaction(faucetAccount, payment)
 	if err != nil {
 		Log(err)
 		return err
