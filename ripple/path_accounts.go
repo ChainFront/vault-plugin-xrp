@@ -79,11 +79,11 @@ func accountsPaths(b *backend) []*framework.Path {
 			HelpSynopsis: "Set options on an account.",
 			Fields: map[string]*framework.FieldSchema{
 				"name": &framework.FieldSchema{Type: framework.TypeString},
-				"set_flag": &framework.FieldSchema{
+				"setFlag": &framework.FieldSchema{
 					Type:        framework.TypeString,
 					Description: "Flag identifier to set on this account.",
 				},
-				"clear_flag": &framework.FieldSchema{
+				"clearFlag": &framework.FieldSchema{
 					Type:        framework.TypeString,
 					Description: "Flag identifier to clear on this account.",
 				},
@@ -95,6 +95,29 @@ func accountsPaths(b *backend) []*framework.Path {
 			Callbacks: map[logical.Operation]framework.OperationFunc{
 				logical.CreateOperation: b.pathAccountSet,
 				logical.UpdateOperation: b.pathAccountSet,
+			},
+		},
+		&framework.Path{
+			Pattern:      "accounts/" + framework.GenericNameRegex("name") + "/trustline",
+			HelpSynopsis: "Creates a trustline for an issued currency.",
+			Fields: map[string]*framework.FieldSchema{
+				"name": &framework.FieldSchema{Type: framework.TypeString},
+				"currencyCode": &framework.FieldSchema{
+					Type:        framework.TypeString,
+					Description: "Currency code.",
+				},
+				"issuer": &framework.FieldSchema{
+					Type:        framework.TypeString,
+					Description: "Ripple address of the issuing account for the currency.",
+				},
+				"limit": &framework.FieldSchema{
+					Type:        framework.TypeString,
+					Description: "Maximum amount for this trustline.",
+				},
+			},
+			Callbacks: map[logical.Operation]framework.OperationFunc{
+				logical.CreateOperation: b.pathCreateTrustline,
+				logical.UpdateOperation: b.pathCreateTrustline,
 			},
 		},
 	}
@@ -249,8 +272,8 @@ func (b *backend) pathReadAccount(ctx context.Context, req *logical.Request, d *
 // Set account flags
 func (b *backend) pathAccountSet(ctx context.Context, req *logical.Request, d *framework.FieldData) (response *logical.Response, err error) {
 	name := d.Get("name").(string)
-	setFlagStr := d.Get("set_flag").(string)
-	clearFlagStr := d.Get("clear_flag").(string)
+	setFlagStr := d.Get("setFlag").(string)
+	clearFlagStr := d.Get("clearFlag").(string)
 	domainStr := d.Get("domain").(string)
 
 	// Retrieve the account keypair from vault storage
@@ -303,6 +326,78 @@ func (b *backend) pathAccountSet(ctx context.Context, req *logical.Request, d *f
 
 	// Sign the transaction
 	signedTx, err := signAccountSetTransaction(sourceAccount, accountSetTx)
+	if err != nil {
+		return nil, err
+	}
+
+	_, txRaw, err := data.Raw(signedTx)
+	if err != nil {
+		return nil, err
+	}
+
+	return &logical.Response{
+		Data: map[string]interface{}{
+			"source_address":     signedTx.Account.String(),
+			"account_sequence":   signedTx.Sequence,
+			"fee":                signedTx.Fee.String(),
+			"transaction_hash":   signedTx.Hash.String(),
+			"signed_transaction": fmt.Sprintf("%X", txRaw),
+		},
+	}, nil
+}
+
+// Create a signed trustline transaction
+func (b *backend) pathCreateTrustline(ctx context.Context, req *logical.Request, d *framework.FieldData) (response *logical.Response, err error) {
+	name := d.Get("name").(string)
+
+	currencyCode := d.Get("currencyCode").(string)
+	if currencyCode == "" {
+		return errMissingField("currencyCode"), nil
+	}
+
+	issuer := d.Get("issuer").(string)
+	if issuer == "" {
+		return errMissingField("issuer"), nil
+	}
+
+	limit := d.Get("limit").(string)
+	if limit == "" {
+		return errMissingField("limit"), nil
+	}
+
+	// Retrieve the account keypair from vault storage
+	sourceAccount, err := b.readVaultAccount(ctx, req, "accounts/"+name)
+	if err != nil {
+		return nil, err
+	}
+	if sourceAccount == nil {
+		return nil, logical.CodedError(400, "source account not found")
+	}
+	sourceAddress := sourceAccount.AccountId
+	src, err := data.NewAccountFromAddress(sourceAddress)
+	if err != nil {
+		return nil, err
+	}
+
+	// Set up the basic transaction object
+	limitAmount, err := data.NewAmount(limit + "/" + currencyCode + "/" + issuer)
+	if err != nil {
+		return nil, logical.CodedError(400, "invalid currency")
+	}
+	trustSetTx := &data.TrustSet{
+		LimitAmount: *limitAmount,
+	}
+
+	trustSetTx.TransactionType = data.TRUST_SET
+	trustSetTx.Flags = new(data.TransactionFlag)
+
+	fee, err := data.NewNativeValue(int64(10))
+	base := trustSetTx.GetBase()
+	base.Fee = *fee
+	base.Account = *src
+
+	// Sign the transaction
+	signedTx, err := signTrustSetTransaction(sourceAccount, trustSetTx)
 	if err != nil {
 		return nil, err
 	}

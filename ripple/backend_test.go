@@ -78,24 +78,37 @@ func TestBackend_createAccountWithFlags(t *testing.T) {
 		t.Fatalf("expected signedTx data not present in createAccountSet")
 	}
 
-	decodedString, err := hex.DecodeString(signedTx.(string))
-	if err != nil {
-		t.Fatalf("unable to decode signedTx: %v", err)
-	}
+	submitSignedTransaction(td, signedTx, t)
+}
 
-	byteReader := bytes.NewReader(decodedString)
-	transaction, err := data.ReadTransaction(byteReader)
-	if err != nil {
-		Log(err)
-		t.Fatalf("unable to read signed_transaction as a valid Ripple transaction: %v", err)
-	}
+func TestBackend_createAccountWithTrustline(t *testing.T) {
 
-	response, err := td.Remote.Submit(transaction)
-	if err != nil {
-		t.Fatalf("failed to submit transaction to testnet: %v", errorString(err))
-	}
+	td := setupTest(t)
 
-	t.Logf("Submitted transaction result : %s -- %s", response.EngineResult.String(), response.EngineResultMessage)
+	// Create our issuing account
+	issuerAccountName := "issuingAccount"
+	createAccount(td, issuerAccountName, t)
+
+	// Set the DefaultRipple flag on the issuing account
+	respData := createAccountSet(td, issuerAccountName, "8", "", "chainfront.io", t)
+	issuerAddress := respData["source_address"]
+	signedTx, ok := respData["signed_transaction"]
+	if !ok {
+		t.Fatalf("expected signedTx data not present in createAccountSet")
+	}
+	submitSignedTransaction(td, signedTx, t)
+
+	// Create our user account
+	userAccountName := "userAccount"
+	createAccount(td, userAccountName, t)
+
+	// Establish a trustline to our custom currency
+	trustSetData := createAccountTrustSet(td, userAccountName, "SRC", issuerAddress.(string), "1000000", t)
+	signedTrustSetTx, ok := trustSetData["signed_transaction"]
+	if !ok {
+		t.Fatalf("expected signedTx data not present in createAccountTrustSet")
+	}
+	submitSignedTransaction(td, signedTrustSetTx, t)
 }
 
 func TestBackend_submitPayment(t *testing.T) {
@@ -278,6 +291,33 @@ func createAccountSet(td *testData, sourceAccountName string, setFlag string, cl
 	return resp.Data
 }
 
+func createAccountTrustSet(td *testData, sourceAccountName string, currencyCode string, issuer string, limit string, t *testing.T) map[string]interface{} {
+	d :=
+		map[string]interface{}{
+			"currencyCode": currencyCode,
+			"issuer":       issuer,
+			"limit":        limit,
+		}
+	resp, err := td.B.HandleRequest(context.Background(), &logical.Request{
+		Operation: logical.CreateOperation,
+		Path:      fmt.Sprintf("accounts/%s/trustline", sourceAccountName),
+		Data:      d,
+		Storage:   td.S,
+	})
+	if err != nil {
+		t.Fatalf("failed to create trustline: %v", err)
+	}
+	if resp.IsError() {
+		t.Fatal(resp.Error())
+	}
+	if resp == nil {
+		t.Fatal("response is nil")
+	}
+	t.Log(resp.Data)
+
+	return resp.Data
+}
+
 func createPayment(td *testData, sourceAccountName string, destinationAccountName string, amount string, t *testing.T) map[string]interface{} {
 	d :=
 		map[string]interface{}{
@@ -363,4 +403,23 @@ func createPaymentWithChannelAndAdditionalSigners(td *testData, sourceAccountNam
 	t.Log(resp.Data)
 
 	return resp.Data
+}
+
+func submitSignedTransaction(td *testData, signedTx interface{}, t *testing.T) *websockets.SubmitResult {
+	decodedString, err := hex.DecodeString(signedTx.(string))
+	if err != nil {
+		t.Fatalf("unable to decode signedTx: %v", err)
+	}
+	byteReader := bytes.NewReader(decodedString)
+	transaction, err := data.ReadTransaction(byteReader)
+	if err != nil {
+		Log(err)
+		t.Fatalf("unable to read signed_transaction as a valid Ripple transaction: %v", err)
+	}
+	response, err := td.Remote.Submit(transaction)
+	if err != nil {
+		t.Fatalf("failed to submit transaction to testnet: %v", errorString(err))
+	}
+	t.Logf("Submitted transaction result : %s -- %s", response.EngineResult.String(), response.EngineResultMessage)
+	return response
 }
