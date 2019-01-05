@@ -39,7 +39,7 @@ func paymentsPaths(b *backend) []*framework.Path {
 				},
 				"assetCode": &framework.FieldSchema{
 					Type:        framework.TypeString,
-					Description: "Code of asset to send (use 'native' for XLM)",
+					Description: "Code of asset to send (use 'native' for XRP)",
 				},
 				"assetIssuer": &framework.FieldSchema{
 					Type:        framework.TypeString,
@@ -125,7 +125,7 @@ func (b *backend) createPayment(ctx context.Context, req *logical.Request, d *fr
 	destinationAddress := destinationAccount.AccountId
 
 	// Prepare the payment transaction
-	payment, err := createPaymentTransaction(sourceAddress, destinationAddress, amount.String())
+	payment, err := createPaymentTransaction(sourceAddress, destinationAddress, amount.String(), assetCode, assetIssuer)
 	if err != nil {
 		return nil, err
 	}
@@ -171,7 +171,7 @@ func (b *backend) validAccountConstraints(account *Account, amount *big.Int, toA
 }
 
 // Create a new unsigned payment transaction
-func createPaymentTransaction(sourceAddress string, destinationAddress string, amount string) (*data.Payment, error) {
+func createPaymentTransaction(sourceAddress string, destinationAddress string, amount string, assetCode string, assetIssuer string) (*data.Payment, error) {
 	src, err := data.NewAccountFromAddress(sourceAddress)
 	if err != nil {
 		return nil, err
@@ -184,10 +184,18 @@ func createPaymentTransaction(sourceAddress string, destinationAddress string, a
 	}
 
 	// Convert the amount into an object
-	amountObj, err := data.NewAmount(amount + "/XRP")
-	if err != nil {
-		Log(err)
-		return nil, err
+	var amountObj *data.Amount
+	if strings.EqualFold(assetCode, "native") {
+		amountObj, err = data.NewAmount(amount + "/XRP")
+		if err != nil {
+			Log(err)
+			return nil, err
+		}
+	} else {
+		amountObj, err = data.NewAmount(amount + "/" + assetCode + "/" + assetIssuer)
+		if err != nil {
+			return nil, logical.CodedError(400, "invalid currency code or issuer")
+		}
 	}
 
 	// Create payment

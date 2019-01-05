@@ -447,7 +447,7 @@ func fundTestAccount(address string) (err error) {
 	}
 
 	// Send the XRP over to our target address
-	payment, err := createPaymentTransaction(faucetAddress, address, "1000")
+	payment, err := createPaymentTransaction(faucetAddress, address, "1000", "native", "")
 	if err != nil {
 		Log(err)
 		return err
