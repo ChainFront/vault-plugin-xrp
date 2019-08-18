@@ -68,16 +68,16 @@ echo "--> Enabling TOTP backend"
 vault secrets enable -path=totp/1000 totp
 
 echo "--> Building"
-go build -o "$SCRATCH/plugins/vault-plugin-ripple"
+go build -o "$SCRATCH/plugins/vault-plugin-xrp"
 
 echo "    Registering plugin"
-SHASUM=$(shasum -a 256 "$SCRATCH/plugins/vault-plugin-ripple" | cut -d " " -f1)
-vault write sys/plugins/catalog/ripple-plugin \
+SHASUM=$(shasum -a 256 "$SCRATCH/plugins/vault-plugin-xrp" | cut -d " " -f1)
+vault write sys/plugins/catalog/xrp-plugin \
   sha_256="$SHASUM" \
-  command="vault-plugin-ripple"
+  command="vault-plugin-xrp"
 
 echo "    Mounting plugin"
-vault secrets enable -path=ripple/1000 -plugin-name=ripple-plugin plugin
+vault secrets enable -path=ripple/1000 -plugin-name=xrp-plugin plugin
 
 echo "==> Ready!"
 wait $!

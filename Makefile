@@ -1,33 +1,28 @@
-PROJECT_NAME := "cf-vault-plugin-ripple"
+PROJECT_NAME := "vault-plugin-xrp"
 
 VERSION := $(shell cat ./VERSION)
 
-PKG := "bitbucket.org/pcrypto/$(PROJECT_NAME)"
-PKG_LIST := $(shell go list ${PKG}/... | grep -v /vendor/)
-GO_FILES := $(shell find . -name '*.go' | grep -v /vendor/ | grep -v _test.go)
-S3_BUCKET_NAME := "chainfront-maven-repo/go
+PKG := "github.com/ChainFront/$(PROJECT_NAME)"
 
-.PHONY: all dep build clean test coverage coverhtml lint
+.PHONY: all dep build clean test coverage lint
 
 all: build
 
 lint: ## Lint the files
-	@golint -set_exit_status ${PKG_LIST}
+	@golint -set_exit_status ./...
 
-test: ## Run unittests
-	@go test -short ${PKG_LIST}
+test: ## Run unit tests
+	@go test  ./...
 
 race: dep ## Run data race detector
-	@go test -race -short ${PKG_LIST}
+	@go test -race -short ./...
 
-msan: dep ## Run memory sanitizer
-	@go test -msan -short ${PKG_LIST}
+msan: dep ## Run memory sanitizer (requires clang on the host)
+	CC=clang go test -msan -short ./...
 
-coverage: ## Generate global code coverage report
-	./tools/coverage.sh;
-
-coverhtml: ## Generate global code coverage report in HTML
-	./tools/coverage.sh html;
+coverage: dep ## Generate code coverage report
+	@go test -coverprofile="coverage.out" ./...
+	@go tool cover -html="coverage.out"
 
 dep: ## Get the dependencies
 	@go get -v -d ./...
@@ -36,12 +31,7 @@ build: dep ## Build the binary file
 	@go build -i -v $(PKG)
 
 clean: ## Remove previous build
-	@rm -f $(PROJECT_NAME)
-
-release: ## Create and publish a new release to S3
-	git tag -a $(VERSION) -m "Release" || true
-	git push origin $(VERSION)
-	goreleaser --rm-dist --skip-validate
+	@rm -f $(PROJECT_NAME) coverage.out
 
 help: ## Display this help screen
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "\033[36m%-30s\033[0m %s\n", $$1, $$2}'

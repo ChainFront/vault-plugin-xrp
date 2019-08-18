@@ -1,4 +1,20 @@
-package ripple
+/*
+ * Copyright (c) 2019 ChainFront LLC.
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *    http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
+package xrp
 
 import (
 	"bytes"
@@ -138,7 +154,7 @@ func TestBackend_submitPayment(t *testing.T) {
 
 	response, err := td.Remote.Submit(transaction)
 	if err != nil {
-		t.Fatalf("failed to submit transaction to testnet: %v", errorString(err))
+		t.Fatalf("failed to submit transaction to testnet: %v", err)
 	}
 
 	t.Logf("Submitted transaction result : %s -- %s", response.EngineResult.String(), response.EngineResultMessage)
@@ -171,73 +187,10 @@ func TestBackend_submitPaymentAboveLimit(t *testing.T) {
 
 	response, err := td.Remote.Submit(transaction)
 	if err != nil {
-		t.Fatalf("failed to submit transaction to testnet: %v", errorString(err))
+		t.Fatalf("failed to submit transaction to testnet: %v", err)
 	}
 
 	t.Logf("Submitted transaction result : %s -- %s", response.EngineResult.String(), response.EngineResultMessage)
-}
-
-func TestBackend_submitPaymentUsingChannel(t *testing.T) {
-
-	td := setupTest(t)
-	createAccount(td, "testSourceAccount", t)
-	createAccount(td, "testDestinationAccount", t)
-	createAccount(td, "testPaymentChannelAccount", t)
-
-	respData := createPaymentWithChannel(td, "testSourceAccount", "testDestinationAccount", "testPaymentChannelAccount", "35", t)
-
-	signedTx, ok := respData["signed_transaction"]
-	if !ok {
-		t.Fatalf("expected signedTx data not present in createPayment")
-	}
-
-	byteReader := bytes.NewReader([]byte(signedTx.(string)))
-	transaction, err := data.ReadTransaction(byteReader)
-	if err != nil {
-		t.Fatalf("unable to read signed_transaction as a valid Ripple transaction: %v", err)
-	}
-
-	response, err := td.Remote.Submit(transaction)
-	if err != nil {
-		t.Fatalf("failed to submit transaction to testnet: %v", errorString(err))
-	}
-
-	t.Logf("transaction posted in ledger: %v", response.EngineResultMessage)
-}
-
-func TestBackend_submitPaymentUsingChannelAndAdditionalSigners(t *testing.T) {
-
-	td := setupTest(t)
-	createAccount(td, "testSourceAccount", t)
-	createAccount(td, "testDestinationAccount", t)
-	createAccount(td, "testPaymentChannelAccount", t)
-	createAccount(td, "testAdditionalSigner1Account", t)
-	createAccount(td, "testAdditionalSigner2Account", t)
-
-	var additionalSigners []string
-	additionalSigners = append(additionalSigners, "testAdditionalSigner1Account", "testAdditionalSigner2Account")
-
-	respData := createPaymentWithChannelAndAdditionalSigners(td, "testSourceAccount", "testDestinationAccount", "testPaymentChannelAccount", additionalSigners, "35", t)
-
-	signedTx, ok := respData["signed_transaction"].(string)
-	if !ok {
-		t.Fatalf("expected signedTx data not present in createPayment")
-	}
-
-	byteReader := bytes.NewReader([]byte(signedTx))
-	transaction, err := data.ReadTransaction(byteReader)
-	if err != nil {
-		Log(err)
-		t.Fatalf("unable to read signed_transaction as a valid Ripple transaction: %v", err)
-	}
-
-	response, err := td.Remote.Submit(transaction)
-	if err != nil {
-		Log(err)
-		t.Fatalf("failed to submit transaction to testnet: %v", errorString(err))
-	}
-
-	t.Logf("transaction posted in ledger: %v", response.EngineResultMessage)
 }
 
 func createAccount(td *testData, accountName string, t *testing.T) {
@@ -346,65 +299,6 @@ func createPayment(td *testData, sourceAccountName string, destinationAccountNam
 	return resp.Data
 }
 
-func createPaymentWithChannel(td *testData, sourceAccountName string, destinationAccountName string, paymentChannelAccountName string, amount string, t *testing.T) map[string]interface{} {
-	d :=
-		map[string]interface{}{
-			"source":         sourceAccountName,
-			"destination":    destinationAccountName,
-			"paymentChannel": paymentChannelAccountName,
-			"assetCode":      "native",
-			"amount":         amount,
-		}
-	resp, err := td.B.HandleRequest(context.Background(), &logical.Request{
-		Operation: logical.CreateOperation,
-		Path:      fmt.Sprintf("payments"),
-		Data:      d,
-		Storage:   td.S,
-	})
-	if err != nil {
-		t.Fatalf("failed to create payment: %v", err)
-	}
-	if resp.IsError() {
-		t.Fatal(resp.Error())
-	}
-	if resp == nil {
-		t.Fatal("response is nil")
-	}
-	t.Log(resp.Data)
-
-	return resp.Data
-}
-
-func createPaymentWithChannelAndAdditionalSigners(td *testData, sourceAccountName string, destinationAccountName string, paymentChannelAccountName string, additionalSigners []string, amount string, t *testing.T) map[string]interface{} {
-	d :=
-		map[string]interface{}{
-			"source":            sourceAccountName,
-			"destination":       destinationAccountName,
-			"paymentChannel":    paymentChannelAccountName,
-			"additionalSigners": additionalSigners,
-			"assetCode":         "native",
-			"amount":            amount,
-		}
-	resp, err := td.B.HandleRequest(context.Background(), &logical.Request{
-		Operation: logical.CreateOperation,
-		Path:      fmt.Sprintf("payments"),
-		Data:      d,
-		Storage:   td.S,
-	})
-	if err != nil {
-		t.Fatalf("failed to create payment: %v", err)
-	}
-	if resp.IsError() {
-		t.Fatal(resp.Error())
-	}
-	if resp == nil {
-		t.Fatal("response is nil")
-	}
-	t.Log(resp.Data)
-
-	return resp.Data
-}
-
 func submitSignedTransaction(td *testData, signedTx interface{}, t *testing.T) *websockets.SubmitResult {
 	decodedString, err := hex.DecodeString(signedTx.(string))
 	if err != nil {
@@ -418,7 +312,7 @@ func submitSignedTransaction(td *testData, signedTx interface{}, t *testing.T) *
 	}
 	response, err := td.Remote.Submit(transaction)
 	if err != nil {
-		t.Fatalf("failed to submit transaction to testnet: %v", errorString(err))
+		t.Fatalf("failed to submit transaction to testnet: %v", err)
 	}
 	t.Logf("Submitted transaction result : %s -- %s", response.EngineResult.String(), response.EngineResultMessage)
 	return response

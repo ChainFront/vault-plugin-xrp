@@ -1,6 +1,6 @@
-# Vault Plugin: Stellar Secrets Backend
+# Vault Plugin: XRP Ledger Secrets Backend
 
-This is a backend secrets plugin to be used with Hashicorp Vault. This plugin manages secret keys for the Stellar blockchain platform.
+This is a backend secrets plugin to be used with Hashicorp Vault. This plugin manages secret keys for the XRP Ledger blockchain platform.
 
 ## Usage
 
@@ -21,53 +21,34 @@ The token is "root" if you've used dev.sh to start Vault.
 
 ### Creating an Account
 
-`vault write stellar/accounts/MyAccountName xlm_balance=50`
+`vault write ripple/accounts/MyAccountName xrp_balance=50`
 
-This will create a new account called "MyAccountName". The XLM balance is just a placeholder for now, 
-it doesn't actually do anything since we're running on the Stellar testnet.
+This will create a new account called "MyAccountName". The XRP balance is just a placeholder for now, 
+it doesn't actually do anything since we're running on the testnet.
 
 ### Viewing an Account
 
-`vault read stellar/accounts/MyAccountName`
+`vault read ripple/accounts/MyAccountName`
 
 ### Viewing All Account Names
 
-`vault list stellar/accounts`
+`vault list ripple/accounts`
 
 ### Creating a Signed Payment Transaction
 
-`vault write stellar/payments source=MySourceAccountName destination=MyDestinationAccountName amount=35`
+`vault write ripple/payments source=MySourceAccountName destination=MyDestinationAccountName amount=35`
 
 This will return a signed transaction with a payment operation to send 35 XLM from MySourceAccountName to MyDestinationAccountName.
-
-### Creating a Signed Payment Transaction Using a Payment Channel
-
-`vault write stellar/payments source=MySourceAccountName destination=MyDestinationAccountName paymentChannel=MyPaymentChannelAccountName amount=35`
-
-This will return a signed transaction with a payment operation to send 35 XLM from MySourceAccountName to MyDestinationAccountName. 
-The account MyPaymentChannelAccountName will be used for sequence numbers, and 
-will be added as a signer to the transaction.
 
 ## Running Tests
 
 ```
-cd stellar
-go test
+make test
 ```
 
 
 ## License
 
-Copyright (c) 2018 Participate Crypto LLC
+Copyright (c) 2018-2019 ChainFront LLC
 
-Licensed under the Apache License, Version 2.0 (the "License");
-you may not use this file except in compliance with the License.
-You may obtain a copy of the License at:
-
-http://www.apache.org/licenses/LICENSE-2.0
-
-Unless required by applicable law or agreed to in writing, software
-distributed under the License is distributed on an "AS IS" BASIS,
-WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-See the License for the specific language governing permissions and
-limitations under the License.
+Licensed under the Apache License, Version 2.0.
